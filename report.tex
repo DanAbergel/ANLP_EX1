@@ -1,0 +1,80 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{Advanced NLP -- Exercise 1}
+\author{Dan Abergel}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+\noindent
+\textbf{GitHub repository:} \url{https://github.com/DanAbergel/ANLP_EX1}
+
+\section{Open Questions}
+
+\subsection*{Question 1 -- Three QA datasets that annotate intrinsic concepts}
+
+A QA dataset is \emph{intrinsic} when the question--answer format is used as a tool to annotate a property of language itself (e.g., predicate--argument structure, discourse relations, coreference), rather than as the end task of answering questions about the world. In an intrinsic QA dataset, the answer can always be recovered from the given sentence or paragraph alone, with no reliance on external world knowledge. We list three such datasets below.
+
+\begin{enumerate}[leftmargin=*]
+
+    \item \textbf{QA-SRL} \citep{he2015question} -- \emph{Semantic Role Labeling as Question Answering}.
+    QA-SRL annotates predicate--argument structure by asking natural-language wh-questions about each verb in a sentence and marking the answer span. For example, given the sentence \emph{``The pilot landed the plane safely after the engine failed,''} the predicate \emph{landed} is annotated with questions such as \emph{``Who landed something?''} (\emph{the pilot}), \emph{``What did someone land?''} (\emph{the plane}), and \emph{``When did someone land something?''} (\emph{after the engine failed}).
+    \textbf{Why intrinsic:} the annotation targets the predicate--argument structure of the sentence -- a core linguistic property -- and every answer is a span within the sentence itself, requiring no world knowledge.
+
+    \item \textbf{QAMR} \citep{michael2018crowdsourcing} -- \emph{Question--Answer Meaning Representations}.
+    QAMR represents the propositional meaning of a sentence as a set of free-form question--answer pairs covering predicate--argument relations and modifiers. For example, given \emph{``After the storm, the mayor ordered an evacuation of the coastal areas,''} the annotation includes pairs such as \emph{``Who ordered something?''} (\emph{the mayor}), \emph{``What was evacuated?''} (\emph{the coastal areas}), and \emph{``What kind of areas?''} (\emph{coastal}).
+    \textbf{Why intrinsic:} the dataset captures the meaning representation of a single sentence; the questions probe its internal semantic structure rather than any external fact, so success depends purely on linguistic understanding.
+
+    \item \textbf{QADiscourse} \citep{pyatkin2020qadiscourse} -- \emph{Discourse Relations as Question Answering}.
+    QADiscourse annotates inter-clausal discourse relations (cause, result, contrast, condition, etc.) by asking natural-language questions whose answer reveals the relation between two clauses. For example, given \emph{``The bridge was closed for repairs. Commuters had to take a long detour,''} the annotation includes \emph{``Why did commuters have to take a detour?''} (\emph{because the bridge was closed for repairs} -- a \emph{cause} relation).
+    \textbf{Why intrinsic:} the target is the discourse structure of the text -- how clauses connect logically -- which is an intrinsic property of language organization, independent of the topic or content of the passage.
+
+\end{enumerate}
+
+These three datasets cover three distinct levels of linguistic structure -- predicate-level (QA-SRL), sentence-level (QAMR), and discourse-level (QADiscourse) -- showing how the QA format can be repurposed as an annotation device for intrinsic linguistic properties rather than as an end-task over world knowledge.
+
+\subsection*{Question 2 -- Inference-time scaling methods}
+
+\textcolor{gray}{\emph{[To be completed.]}}
+
+\section{Programming Exercise -- Qualitative Analysis}
+
+\textcolor{gray}{\emph{[To be completed after running the experiments in Section~2 of the assignment.]}}
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{9}
+
+\bibitem[He et al.(2015)]{he2015question}
+Luheng He, Mike Lewis, and Luke Zettlemoyer.
+\newblock Question-Answer Driven Semantic Role Labeling: Using Natural Language to Annotate Natural Language.
+\newblock In \emph{Proceedings of EMNLP}, 2015.
+
+\bibitem[Michael et al.(2018)]{michael2018crowdsourcing}
+Julian Michael, Gabriel Stanovsky, Luheng He, Ido Dagan, and Luke Zettlemoyer.
+\newblock Crowdsourcing Question-Answer Meaning Representations.
+\newblock In \emph{Proceedings of NAACL}, 2018.
+
+\bibitem[Pyatkin et al.(2020)]{pyatkin2020qadiscourse}
+Valentina Pyatkin, Ayal Klein, Reut Tsarfaty, and Ido Dagan.
+\newblock QADiscourse -- Discourse Relations as QA Pairs: Representation, Crowdsourcing and Baselines.
+\newblock In \emph{Proceedings of EMNLP}, 2020.
+
+\end{thebibliography}
+
+\end{document}
