@@ -6,6 +6,7 @@
 \usepackage{parskip}
 \usepackage{booktabs}
 \usepackage{xcolor}
+\usepackage{graphicx}
 
 \hypersetup{
     colorlinks=true,
@@ -29,116 +30,109 @@
 
 \subsection*{Question 1 -- Three QA datasets that annotate intrinsic concepts}
 
-A QA dataset is \emph{intrinsic} when the question--answer format is used as a tool to annotate a property of language itself (e.g., predicate--argument structure, discourse relations, coreference), rather than as the end task of answering questions about the world. In an intrinsic QA dataset, the answer can always be recovered from the given sentence or paragraph alone, with no reliance on external world knowledge. We list three such datasets below.
+By ``intrinsic'' I understand datasets where the QA format is just a tool to annotate something about the language, and the answer always sits inside the input sentence -- so you don't need any world knowledge to answer.
 
 \begin{enumerate}[leftmargin=*]
+    \item \textbf{QA-SRL} (He et al., 2015) -- the labels are semantic roles, written as wh-questions about each verb. For \emph{``The pilot landed the plane''} the verb \emph{landed} gives \emph{Who landed something?}~$\rightarrow$ \emph{the pilot} and \emph{What did someone land?}~$\rightarrow$ \emph{the plane}. It's intrinsic because the targets are predicate--argument relations, which are a property of the sentence itself.
 
-    \item \textbf{QA-SRL} \citep{he2015question} -- \emph{Semantic Role Labeling as Question Answering}.
-    QA-SRL annotates predicate--argument structure by asking natural-language wh-questions about each verb in a sentence and marking the answer span. For example, given the sentence \emph{``The pilot landed the plane safely after the engine failed,''} the predicate \emph{landed} is annotated with questions such as \emph{``Who landed something?''} (\emph{the pilot}), \emph{``What did someone land?''} (\emph{the plane}), and \emph{``When did someone land something?''} (\emph{after the engine failed}).
-    \textbf{Why intrinsic:} the annotation targets the predicate--argument structure of the sentence -- a core linguistic property -- and every answer is a span within the sentence itself, requiring no world knowledge.
+    \item \textbf{QAMR} (Michael et al., 2018) -- same idea but more general: the meaning of a sentence is captured by a whole set of free-form QA pairs (arguments, modifiers, etc.). Same reason as QA-SRL for being intrinsic -- the questions describe what the sentence says, not facts about the world.
 
-    \item \textbf{QAMR} \citep{michael2018crowdsourcing} -- \emph{Question--Answer Meaning Representations}.
-    QAMR represents the propositional meaning of a sentence as a set of free-form question--answer pairs covering predicate--argument relations and modifiers. For example, given \emph{``After the storm, the mayor ordered an evacuation of the coastal areas,''} the annotation includes pairs such as \emph{``Who ordered something?''} (\emph{the mayor}), \emph{``What was evacuated?''} (\emph{the coastal areas}), and \emph{``What kind of areas?''} (\emph{coastal}).
-    \textbf{Why intrinsic:} the dataset captures the meaning representation of a single sentence; the questions probe its internal semantic structure rather than any external fact, so success depends purely on linguistic understanding.
-
-    \item \textbf{QADiscourse} \citep{pyatkin2020qadiscourse} -- \emph{Discourse Relations as Question Answering}.
-    QADiscourse annotates inter-clausal discourse relations (cause, result, contrast, condition, etc.) by asking natural-language questions whose answer reveals the relation between two clauses. For example, given \emph{``The bridge was closed for repairs. Commuters had to take a long detour,''} the annotation includes \emph{``Why did commuters have to take a detour?''} (\emph{because the bridge was closed for repairs} -- a \emph{cause} relation).
-    \textbf{Why intrinsic:} the target is the discourse structure of the text -- how clauses connect logically -- which is an intrinsic property of language organization, independent of the topic or content of the passage.
-
+    \item \textbf{QADiscourse} (Pyatkin et al., 2020) -- here the label is the discourse relation between two clauses (cause, contrast, condition\ldots), encoded as a question whose answer reveals it. Intrinsic because what is being annotated is how the clauses connect inside the text.
 \end{enumerate}
-
-These three datasets cover three distinct levels of linguistic structure -- predicate-level (QA-SRL), sentence-level (QAMR), and discourse-level (QADiscourse) -- showing how the QA format can be repurposed as an annotation device for intrinsic linguistic properties rather than as an end-task over world knowledge.
 
 \subsection*{Question 2 -- Inference-time scaling methods}
 
-Inference-time scaling refers to spending additional compute at test time -- rather than at training time -- to obtain better answers from a pretrained language model. The course covered three families of inference-time scaling methods, discussed in turn below.
+The idea of inference-time scaling is to spend more compute at test time (rather than during training) to get better outputs. From the lecture I noted three methods.
 
-\subsubsection*{(a) Description of each method}
+\subsubsection*{(a) The three methods}
 
-\paragraph{1. Self-Consistency \citep{wang2022selfconsistency}.}
+\paragraph{1. Self-Consistency (Wang et al., 2022).}
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Description.} Instead of greedy-decoding a single chain-of-thought, sample $N$ diverse reasoning chains for the same prompt (with non-zero temperature), then take a \emph{majority vote} over their final answers. The most frequent final answer is returned.
-    \item \textbf{Advantages.} Simple to implement (no extra model, no extra training); robust and well-documented improvements on math and science reasoning benchmarks; complements any CoT-prompted model.
-    \item \textbf{Computational bottlenecks.} Multiplies decoding cost by $N$ (each chain is a full autoregressive generation). The bottleneck is GPU compute and KV-cache memory across the $N$ parallel chains.
-    \item \textbf{Parallelizable?} \textbf{Yes -- embarrassingly parallel.} The $N$ samples are independent and can be batched in a single forward pass on the same GPU, which exploits batched inference efficiently.
+    \item \emph{Description.} Sample $N$ different chains of thought from the same prompt (with non-zero temperature), then take the majority vote on the final answer.
+    \item \emph{Advantages.} Very easy to plug on top of any CoT model -- no extra training, no extra model. Improves accuracy on reasoning tasks pretty reliably.
+    \item \emph{Bottlenecks.} You pay roughly $N$ times the decoding cost, and you need to hold $N$ KV caches at the same time.
+    \item \emph{Parallelizable?} Yes, easily. The $N$ samples don't depend on each other so you just put them in one big batch.
 \end{itemize}
 
-\paragraph{2. Verifier-based Best-of-N \citep{cobbe2021training,lightman2023letsverify}.}
+\paragraph{2. Verifier-based Best-of-$N$ (Cobbe et al., 2021; Lightman et al., 2023).}
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Description.} Sample $N$ candidate solutions from the generator model, then score each one with a separate trained \emph{verifier}. Two flavours were discussed: \emph{outcome reward models} (ORM) that score only the final answer, and \emph{process reward models} (PRM) that score each intermediate reasoning step. The candidate with the highest verifier score is selected.
-    \item \textbf{Advantages.} Often outperforms self-consistency because the verifier can identify a correct minority answer; PRMs give finer-grained feedback than majority voting; verifiers can also be used at training time (e.g., to filter CoT data).
-    \item \textbf{Computational bottlenecks.} $N \times$ generator decoding \emph{plus} $N$ (or more, for PRMs) verifier forward passes. The verifier itself must fit in GPU memory alongside the generator -- additional parameter footprint.
-    \item \textbf{Parallelizable?} \textbf{Yes.} Generation of the $N$ candidates is independent and batchable; verifier scoring is also independent across candidates. End-to-end parallelism is comparable to self-consistency, modulo the extra verifier cost.
+    \item \emph{Description.} Same idea (sample $N$ candidates), but instead of voting you score every candidate with a separately trained verifier and keep the one with the best score.
+    \item \emph{Advantages.} Can still pick the correct answer when only a minority of the $N$ samples is right -- which majority voting cannot do.
+    \item \emph{Bottlenecks.} You pay the $N \times$ generation cost like Self-Consistency, plus $N$ verifier forward passes. Also the verifier itself has to fit in memory next to the generator.
+    \item \emph{Parallelizable?} Yes, both the generation and the verifier scoring are independent across the $N$ candidates.
 \end{itemize}
 
-\paragraph{3. Long Chain-of-Thought reasoning (O1 / DeepSeek-R1-style) \citep{openai2024o1,deepseek2025r1}.}
+\paragraph{3. Long chain-of-thought (OpenAI o1, 2024; DeepSeek-R1, 2025).}
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Description.} Rather than running many short chains, the model is trained (typically via reinforcement learning with a verifiable reward) to produce a \emph{single but very long} chain-of-thought, internally performing \textbf{planning}, \textbf{backtracking} (``wait, that doesn't work, let me try again''), and \textbf{self-evaluation}. Test-time compute is scaled by allowing the model to ``think'' for many more tokens within one trajectory. Empirically, the average response length grows substantially with RL training (the ``aha moment'' observed in DeepSeek-R1-Zero).
-    \item \textbf{Advantages.} State-of-the-art performance on hard reasoning benchmarks (AIME, scientific QA, competition math); the model itself learns when to backtrack or re-evaluate, so no external verifier or vote is required at inference time; a single coherent reasoning trace is easier to inspect and debug than $N$ separate chains.
-    \item \textbf{Computational bottlenecks.} Each generation is intrinsically \emph{sequential}: the KV-cache grows linearly with the number of reasoning tokens, and decoding latency scales with the (much longer) sequence length. The bottleneck is therefore memory for the KV cache and wall-clock latency, not aggregate FLOPs across samples.
-    \item \textbf{Parallelizable?} \textbf{No -- not within a single trajectory.} Token generation is autoregressive and cannot be parallelised along the sequence dimension. Different prompts can of course be batched, but the cost of any single prediction grows with thinking length.
+    \item \emph{Description.} The model is trained (using RL with a verifiable reward) to produce a single but very long chain of thought, where it plans, backtracks and evaluates itself. We scale the test-time compute by letting it ``think'' for many more tokens.
+    \item \emph{Advantages.} Currently the best results on hard reasoning. And there is no external verifier or vote needed at inference time.
+    \item \emph{Bottlenecks.} Generation is sequential, so the KV cache and the latency grow with the number of reasoning tokens.
+    \item \emph{Parallelizable?} Not inside a single trajectory -- you cannot parallelize an autoregressive decoding. You can still batch across different prompts.
 \end{itemize}
 
-\subsubsection*{(b) Which method on a single large-memory GPU for a complex scientific reasoning task?}
+\subsubsection*{(b) Single large-memory GPU, complex scientific task}
 
-On a \emph{single GPU with large memory capacity} for a complex scientific reasoning task, I would choose \textbf{long chain-of-thought reasoning with an O1 / DeepSeek-R1-style model}, for the following reasons:
+I would go with the long-CoT model. The reason is that what limits long CoT is the size of the KV cache, and that is exactly what a large-memory GPU provides. The other two methods scale by sampling more candidates, and that benefits more from several GPUs (or just from a higher batch throughput) than from extra memory on a single one. We also saw in the lecture that on hard reasoning tasks (AIME, science olympiads), models that learn to plan and backtrack do better than sample-and-vote methods at the same compute budget.
 
-\begin{enumerate}[leftmargin=*]
-    \item \textbf{Memory is the binding constraint, and we have it.} A long reasoning trace requires a large KV cache, which scales linearly with thinking length. A single large-memory GPU is the ideal hardware profile for this: we do not need multi-GPU sharding, but we do need enough memory to hold the entire growing context. This is exactly what the scenario provides.
-    \item \textbf{Self-consistency and Best-of-N scale across samples, not depth.} Their gains come from parallelism over $N$ independent rollouts, which benefits more from many GPUs or large batch throughput than from per-GPU memory. On a \emph{single} GPU, the value of extra memory is mostly wasted under these methods.
-    \item \textbf{Empirical evidence.} On hard scientific and mathematical reasoning benchmarks (AIME, science olympiads), reasoning models that internalise planning, backtracking, and self-evaluation currently outperform sampling-based scaling approaches at comparable compute budgets.
-    \item \textbf{No external verifier required.} The single-model setup avoids having to fit a generator \emph{and} a separate verifier in memory simultaneously, which simplifies deployment on one GPU.
-\end{enumerate}
+Self-Consistency would also be a reasonable choice on one GPU, since the $N$ samples can be batched together. But for a hard scientific task, I think one well-trained long chain that plans and self-corrects buys more than voting between $N$ shorter ones.
 
-A reasonable alternative would be self-consistency, which is also a strong fit for a single GPU thanks to batched parallel sampling; but for tasks where the difficulty lies in long, structured reasoning (rather than in noise across short chains), long CoT reasoning is the more compute-efficient choice on this hardware profile.
+\section{Programming Exercise -- MRPC Paraphrase Detection}
 
-\section{Programming Exercise -- Qualitative Analysis}
+I fine-tuned \texttt{bert-base-uncased} on MRPC. The whole code is in \texttt{ex1.py} in the repo: it loads the model with \texttt{AutoModelForSequenceClassification}, uses dynamic padding via \texttt{DataCollatorWithPadding}, and logs the loss to W\&B at every step. The W\&B project (3 runs) is here: \url{https://wandb.ai/danabergel1995-hebrew-university-of-jerusalem/anlp-ex1-mrpc}.
 
-\textcolor{gray}{\emph{[To be completed after running the experiments in Section~2 of the assignment.]}}
+\subsection*{Hyper-parameter search}
 
-\bibliographystyle{plainnat}
-\begin{thebibliography}{9}
+I tried three configurations, all on the full train and validation splits:
 
-\bibitem[He et al.(2015)]{he2015question}
-Luheng He, Mike Lewis, and Luke Zettlemoyer.
-\newblock Question-Answer Driven Semantic Role Labeling: Using Natural Language to Annotate Natural Language.
-\newblock In \emph{Proceedings of EMNLP}, 2015.
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\# & Epochs & Learning rate & Batch size & Validation acc \\
+\midrule
+1 & 3 & $2 \cdot 10^{-5}$ & 16 & \textbf{0.8701} \\
+2 & 3 & $5 \cdot 10^{-5}$ & 32 & 0.8358 \\
+3 & 3 & $1 \cdot 10^{-4}$ & 32 & 0.8480 \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\bibitem[Michael et al.(2018)]{michael2018crowdsourcing}
-Julian Michael, Gabriel Stanovsky, Luheng He, Ido Dagan, and Luke Zettlemoyer.
-\newblock Crowdsourcing Question-Answer Meaning Representations.
-\newblock In \emph{Proceedings of NAACL}, 2018.
+Config 1 is the best, config 2 the worst, and all three are above the 75\% threshold.
 
-\bibitem[Pyatkin et al.(2020)]{pyatkin2020qadiscourse}
-Valentina Pyatkin, Ayal Klein, Reut Tsarfaty, and Ido Dagan.
-\newblock QADiscourse -- Discourse Relations as QA Pairs: Representation, Crowdsourcing and Baselines.
-\newblock In \emph{Proceedings of EMNLP}, 2020.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\linewidth]{train_loss.png}
+\caption{Train loss per step for the three configurations.}
+\label{fig:trainloss}
+\end{figure}
 
-\bibitem[Wang et al.(2022)]{wang2022selfconsistency}
-Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou.
-\newblock Self-Consistency Improves Chain of Thought Reasoning in Language Models.
-\newblock \emph{arXiv preprint arXiv:2203.11171}, 2022.
+\subsection*{Best validation $\Rightarrow$ best test?}
 
-\bibitem[Cobbe et al.(2021)]{cobbe2021training}
-Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman.
-\newblock Training Verifiers to Solve Math Word Problems.
-\newblock \emph{arXiv preprint arXiv:2110.14168}, 2021.
+The test accuracies of the three checkpoints are 0.8458, 0.8354 and 0.8365 (in the same order as the table). So the best-on-validation config is also the best on test. One thing I noticed though: the gap between the configs shrinks a lot on the test set (about 1 point, vs.\ 3 points on validation), so the difference between the two non-winning configs on validation is partly noise.
 
-\bibitem[Lightman et al.(2023)]{lightman2023letsverify}
-Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe.
-\newblock Let's Verify Step by Step.
-\newblock \emph{arXiv preprint arXiv:2305.20050}, 2023.
+\subsection*{Qualitative analysis: best vs.\ worst configuration}
 
-\bibitem[OpenAI(2024)]{openai2024o1}
-OpenAI.
-\newblock Learning to Reason with LLMs (OpenAI o1).
-\newblock Technical Report, 2024.
+I compared config 1 (best, 87.0\%) and config 2 (worst, 83.6\%) on the validation set. There are 29 examples where the best is correct and the worst is wrong, and looking at them, two types of cases come back often:
 
-\bibitem[DeepSeek-AI(2025)]{deepseek2025r1}
-DeepSeek-AI.
-\newblock DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning.
-\newblock Technical Report, 2025.
+\begin{itemize}[leftmargin=*]
+    \item Pairs that share many words but are \emph{not} paraphrases. The worst model seems to rely on word overlap and predicts ``paraphrase''.
+    \item Real paraphrases written with different words. The worst model sees little overlap and goes the other way.
+\end{itemize}
 
-\end{thebibliography}
+Two examples below.
+
+\paragraph{Example 1 (gold = 0, worst predicts 1).}
+\emph{s1:} ``After losing as much as 84.56 earlier, the Dow Jones industrial average closed up 22.81, or 0.2 percent, at 9{,}340.45.''\\
+\emph{s2:} ``In midday trading, the Dow Jones industrial average lost 68.84, or 0.7 percent, to 9{,}248.80.''\\
+Both sentences are about the Dow on the same day and use similar words, but all the numbers are different. The worst model gets fooled by the overlap.
+
+\paragraph{Example 2 (gold = 1, worst predicts 0).}
+\emph{s1:} ``Broomhead was assigned to 2nd Squadron, 3rd Armor Cavalry Regiment, based at Fort Carson.''\\
+\emph{s2:} ``Broomhead, 34, was assigned to the 2nd Squadron, 3rd Armored Cavalry Regiment.''\\
+Same fact (same assignment), but s1 mentions Fort Carson and s2 adds his age. Those small added/missing pieces are enough to make the worst model say ``not paraphrase''.
+
+\paragraph{Example 3 (gold = 0, worst predicts 1).}
+\emph{s1:} ``\,`It is bad for Symbian,' said Per Lindberg, analyst at Dresdner Kleinwort Wasserstein.''\\
+\emph{s2:} ``\,`Motorola has displayed clear disloyalty' to Symbian, said Per Lindberg, an analyst at Dresdner Kleinwort Wasserstein in London.''\\
+Same speaker, same affiliation, very similar framing -- but the actual quote in each sentence is different. The worst model seems to anchor on the speaker info and miss that the two reported statements are not the same.
 
 \end{document}
