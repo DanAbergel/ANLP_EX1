@@ -1,42 +1,19 @@
-"""Fine-tune bert-base-uncased on MRPC for paraphrase detection."""
-
 import argparse
-import json
 import os
 
 import numpy as np
 import torch
 from datasets import load_dataset
-from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
-    TrainerCallback,
     TrainingArguments,
 )
 
-MODEL_NAME = "bert-base-uncased"
-DATASET_NAME = "nyu-mll/glue"
-DATASET_CONFIG = "mrpc"
-RES_FILE = "res.txt"
-PREDICTIONS_FILE = "predictions.txt"
 
-
-class LossLogger(TrainerCallback):
-    def __init__(self, out_path):
-        self.out_path = out_path
-        self.records = []
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs and "loss" in logs:
-            self.records.append({"step": state.global_step, "loss": float(logs["loss"])})
-            with open(self.out_path, "w") as f:
-                json.dump(self.records, f)
-
-
-def parse_args():
+def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_train_samples", type=int, default=-1)
     parser.add_argument("--max_eval_samples", type=int, default=-1)
@@ -50,29 +27,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_splits(max_train, max_eval, max_predict):
-    raw = load_dataset(DATASET_NAME, DATASET_CONFIG)
-    train_ds = raw["train"]
-    eval_ds = raw["validation"]
-    test_ds = raw["test"]
-    if max_train != -1:
-        train_ds = train_ds.select(range(min(max_train, len(train_ds))))
-    if max_eval != -1:
-        eval_ds = eval_ds.select(range(min(max_eval, len(eval_ds))))
-    if max_predict != -1:
-        test_ds = test_ds.select(range(min(max_predict, len(test_ds))))
-    return train_ds, eval_ds, test_ds
-
-
-def tokenize_dataset(dataset, tokenizer):
-    def _tok(batch):
-        return tokenizer(
-            batch["sentence1"],
-            batch["sentence2"],
-            truncation=True,
-            max_length=tokenizer.model_max_length,
-        )
-    return dataset.map(_tok, batched=True)
+def tokenize(ds, tok):
+    return ds.map(
+        lambda b: tok(b["sentence1"], b["sentence2"], truncation=True),
+        batched=True,
+    )
 
 
 def compute_metrics(eval_pred):
@@ -81,123 +40,111 @@ def compute_metrics(eval_pred):
     return {"accuracy": float((preds == labels).mean())}
 
 
-def run_name(epochs, lr, batch_size):
-    return f"ep{epochs}_lr{lr}_bs{batch_size}"
+def main():
+    args = get_args()
 
+    if not (args.do_train or args.do_predict):
+        raise SystemExit("nothing to do, pass --do_train and/or --do_predict")
 
-def append_res(epochs, lr, batch_size, eval_acc):
-    line = f"epoch_num: {epochs}, lr: {lr}, batch_size: {batch_size}, eval_acc: {eval_acc:.4f}\n"
-    with open(RES_FILE, "a") as f:
-        f.write(line)
-
-
-def do_train(args):
+    # use offline mode if user is not logged into wandb (avoids crashing)
     os.environ.setdefault("WANDB_PROJECT", "anlp-ex1-mrpc")
     if not os.environ.get("WANDB_API_KEY") and "WANDB_MODE" not in os.environ:
         os.environ["WANDB_MODE"] = "offline"
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
-
-    train_ds, eval_ds, _ = load_splits(args.max_train_samples, args.max_eval_samples, -1)
-    train_tok = tokenize_dataset(train_ds, tokenizer)
-    eval_tok = tokenize_dataset(eval_ds, tokenizer)
-
-    keep_cols = {"input_ids", "attention_mask", "token_type_ids", "label"}
-    train_tok = train_tok.remove_columns([c for c in train_tok.column_names if c not in keep_cols])
-    eval_tok = eval_tok.remove_columns([c for c in eval_tok.column_names if c not in keep_cols])
-
-    name = run_name(args.num_train_epochs, args.lr, args.batch_size)
-    output_dir = os.path.join("runs", name)
-
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=args.num_train_epochs,
-        learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=64,
-        logging_strategy="steps",
-        logging_steps=1,
-        eval_strategy="no",
-        save_strategy="no",
-        report_to=["wandb"],
-        run_name=name,
-        seed=42,
-    )
-
-    collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    os.makedirs("runs", exist_ok=True)
-    loss_logger = LossLogger(os.path.join("runs", f"{name}_losses.json"))
-
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_tok,
-        eval_dataset=eval_tok,
-        processing_class=tokenizer,
-        data_collator=collator,
-        compute_metrics=compute_metrics,
-        callbacks=[loss_logger],
-    )
-    trainer.train()
-
-    metrics = trainer.evaluate()
-    eval_acc = metrics["eval_accuracy"]
-    print(f"[{name}] validation accuracy = {eval_acc:.4f}")
-    append_res(args.num_train_epochs, args.lr, args.batch_size, eval_acc)
-
-    final_dir = os.path.join("runs", name, "final")
-    trainer.save_model(final_dir)
-    tokenizer.save_pretrained(final_dir)
-
-
-def do_predict(args):
-    if args.model_path is None:
-        raise ValueError("--do_predict requires --model_path")
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_path)
-    model.eval()
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
-
-    _, _, test_ds = load_splits(-1, -1, args.max_predict_samples)
-    sentences1 = list(test_ds["sentence1"])
-    sentences2 = list(test_ds["sentence2"])
-
-    test_tok = tokenize_dataset(test_ds, tokenizer)
-    keep_cols = {"input_ids", "attention_mask", "token_type_ids"}
-    test_tok = test_tok.remove_columns([c for c in test_tok.column_names if c not in keep_cols])
-
-    collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    loader = DataLoader(test_tok, batch_size=64, collate_fn=collator)
-
-    all_preds = []
-    with torch.no_grad():
-        for batch in loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            logits = model(**batch).logits
-            preds = torch.argmax(logits, dim=-1).cpu().tolist()
-            all_preds.extend(preds)
-
-    with open(PREDICTIONS_FILE, "w") as f:
-        for s1, s2, p in zip(sentences1, sentences2, all_preds):
-            s1 = s1.replace("\n", " ").strip()
-            s2 = s2.replace("\n", " ").strip()
-            f.write(f"{s1}###{s2}###{p}\n")
-
-    print(f"Wrote {len(all_preds)} predictions to {PREDICTIONS_FILE}")
-
-
-def main():
-    args = parse_args()
-    if not (args.do_train or args.do_predict):
-        raise SystemExit("Must pass --do_train and/or --do_predict")
     if args.do_train:
-        do_train(args)
+        run_name = f"ep{args.num_train_epochs}_lr{args.lr}_bs{args.batch_size}"
+        out_dir = os.path.join("runs", run_name)
+
+        tok = AutoTokenizer.from_pretrained("bert-base-uncased")
+        model = AutoModelForSequenceClassification.from_pretrained(
+            "bert-base-uncased", num_labels=2
+        )
+
+        raw = load_dataset("nyu-mll/glue", "mrpc")
+        train_ds = raw["train"]
+        eval_ds = raw["validation"]
+        if args.max_train_samples != -1:
+            train_ds = train_ds.select(range(args.max_train_samples))
+        if args.max_eval_samples != -1:
+            eval_ds = eval_ds.select(range(args.max_eval_samples))
+
+        train_ds = tokenize(train_ds, tok)
+        eval_ds = tokenize(eval_ds, tok)
+
+        training_args = TrainingArguments(
+            output_dir=out_dir,
+            num_train_epochs=args.num_train_epochs,
+            learning_rate=args.lr,
+            per_device_train_batch_size=args.batch_size,
+            per_device_eval_batch_size=64,
+            logging_steps=1,         # log loss every step (asked by the spec)
+            save_strategy="no",      # we only need the final model
+            eval_strategy="no",
+            report_to=["wandb"],
+            run_name=run_name,
+            seed=42,
+        )
+
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            processing_class=tok,
+            data_collator=DataCollatorWithPadding(tok),
+            compute_metrics=compute_metrics,
+        )
+        trainer.train()
+
+        metrics = trainer.evaluate()
+        acc = metrics["eval_accuracy"]
+        print(f"validation accuracy = {acc:.4f}")
+
+        with open("res.txt", "a") as f:
+            f.write(
+                f"epoch_num: {args.num_train_epochs}, lr: {args.lr}, "
+                f"batch_size: {args.batch_size}, eval_acc: {acc:.4f}\n"
+            )
+
+        # save the final model so we can reuse it for --do_predict later
+        trainer.save_model(os.path.join(out_dir, "final"))
+        tok.save_pretrained(os.path.join(out_dir, "final"))
+
     if args.do_predict:
-        do_predict(args)
+        if args.model_path is None:
+            raise ValueError("--do_predict needs --model_path")
+
+        tok = AutoTokenizer.from_pretrained(args.model_path)
+        model = AutoModelForSequenceClassification.from_pretrained(args.model_path)
+        model.eval()  # important: turn off dropout for inference
+
+        test_ds = load_dataset("nyu-mll/glue", "mrpc")["test"]
+        if args.max_predict_samples != -1:
+            test_ds = test_ds.select(range(args.max_predict_samples))
+
+        s1 = list(test_ds["sentence1"])
+        s2 = list(test_ds["sentence2"])
+        test_tok = tokenize(test_ds, tok)
+
+        # use Trainer.predict so we get batched inference + dynamic padding for free
+        pred_args = TrainingArguments(
+            output_dir="runs/_pred",
+            per_device_eval_batch_size=64,
+            report_to=[],
+        )
+        trainer = Trainer(
+            model=model,
+            args=pred_args,
+            processing_class=tok,
+            data_collator=DataCollatorWithPadding(tok),
+        )
+        logits = trainer.predict(test_tok).predictions
+        preds = np.argmax(logits, axis=-1)
+
+        with open("predictions.txt", "w") as f:
+            for a, b, p in zip(s1, s2, preds):
+                f.write(f"{a.strip()}###{b.strip()}###{int(p)}\n")
+        print(f"wrote {len(preds)} predictions to predictions.txt")
 
 
 if __name__ == "__main__":
